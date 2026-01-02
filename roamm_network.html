@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Interactive Lambda–API–Table Map (Debug)</title>
+
+  <!-- Cytoscape + extensions -->
+  <!-- <script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+  <script src="https://unpkg.com/cytoscape-cose-bilkent@4.0.0/cytoscape-cose-bilkent.js"></script>
+  <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+  <script src="https://unpkg.com/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+  <script src="https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"></script>
+  <script src="https://unpkg.com/cytoscape-popper@2.0.0/cytoscape-popper.js"></script> -->
+
+  <!-- Cytoscape core -->
+  <script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+
+  <!-- Force layout extensions -->
+  <script src="https://unpkg.com/cytoscape-cose-bilkent@4.0.0/cytoscape-cose-bilkent.js"></script>
+
+  <!-- 1) Load dagre itself -->
+  <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+
+  <!-- 2) Then the Cytoscape plugin that wraps it -->
+  <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+
+  <!-- Popper & Tippy (for edge tooltips) -->
+  <script src="https://unpkg.com/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+  <script src="https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"></script>
+  <script src="https://unpkg.com/cytoscape-popper@2.0.0/cytoscape-popper.js"></script>
+
+  <style>
+    body, html { margin:0; padding:0; height:100%; font-family:Arial,sans-serif; }
+    #sidebar { position:absolute; top:0; left:0; width:25%; bottom:0; background:#fafafa; border-right:1px solid #ddd; overflow:auto; padding:10px; box-sizing:border-box; }
+    #topbar  { position:absolute; top:0; left:300px; right:0; height:40px; background:#f5f5f5; padding:5px 10px; box-sizing:border-box; }
+    #cy      { position:absolute; top:40px; left:300px; right:0; bottom:0; }
+    #search { width:100%; padding:5px; box-sizing:border-box; margin-bottom:10px; }
+    .filter-group { margin-bottom:10px; }
+    .legend { font-size:0.9em; margin-bottom:10px; }
+    .shape-box { display:inline-block; width:12px; height:12px; margin-right:4px; vertical-align:middle; }
+    #networkIndex ul { list-style:none; padding-left:0; }
+    #networkIndex li { margin:4px 0; }
+    #networkIndex a { cursor:pointer; color:#1976D2; text-decoration:underline; }
+    #info { height: calc(100% - 220px); overflow:auto; padding-top:10px; }
+    .highlighted { opacity:1 !important; z-index:9999; }
+    .faded       { opacity:0.1 !important; }
+    .hidden      { display:none !important; }
+    code { background:#eee; padding:2px 4px; border-radius:3px; white-space: pre-wrap; }
+    .edge-hint { font-size:0.85em; color:#555; margin-left:8px; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <input id="search" placeholder="🔍 Search node... (Enter)" />
+
+    <div class="filter-group">
+      <strong>Filters</strong><br/>
+      <label><input type="checkbox" data-type="api"    checked /> APIs</label><br/>
+      <label><input type="checkbox" data-type="lambda" checked /> Lambdas</label><br/>
+      <label><input type="checkbox" data-type="table"  checked /> Tables</label><br/>
+    </div>
+
+    <div class="legend">
+      <strong>Legend</strong><br/>
+      <div><span class="shape-box" style="background:#FFCDD2;clip-path:polygon(50% 0%,0% 100%,100% 100%)"></span> API</div>
+      <div><span class="shape-box" style="background:#C8E6C9;border-radius:50%"></span> Lambda</div>
+      <div><span class="shape-box" style="background:#BBDEFB;border-radius:4px"></span> Table</div>
+    </div>
+
+    <div id="networkIndex">
+      <strong>Networks</strong>
+      <ul>
+        <li><a data-network="Network 1">Network 1</a></li>
+        <li><a data-network="Network 2">Network 2</a></li>
+        <li><a data-network="Network 3">Network 3</a></li>
+      </ul>
+    </div>
+
+    <hr>
+    <div id="info"><em>Click a node or edge…</em></div>
+  </div>
+
+  <div id="topbar">
+    <button id="layoutDagre">Dagre (LR)</button>
+    <button id="layoutBreadth">Hierarchical</button>
+    <button id="layoutCose">Force (cose)</button>
+    <button id="layoutCoseBilkent">Force (cose-bilkent)</button>
+    <button id="layoutConcentric">Radial</button>
+    <button id="layoutPreset">Custom</button>
+  </div>
+
+  <div id="cy"></div>
+
+  <script>
+    cytoscape.use(cytoscapeCoseBilkent);
+    cytoscape.use(cytoscapeDagre);
+    cytoscape.use(cytoscapePopper);
+
+    // — Paste your array here, replacing the commented block —
+    const userElements = [
+      // ─── TABLE NODES ─────────────────────────────────────────
+      { data:{ id:'table_b_test_participant_daily_metrics', label:'b_test_participant_daily_metrics', type:'table' } },
+      { data:{ id:'table_campaignmanager_info',           label:'campaignmanager_info',            type:'table' } },
+      { data:{ id:'table_coordinator_details',           label:'coordinator_details',            type:'table' } },
+      { data:{ id:'table_coordinator_permissions',       label:'coordinator_permissions',        type:'table' } },
+      { data:{ id:'table_new_admin_dashboard',           label:'new_admin_dashboard',            type:'table' } },
+      { data:{ id:'table_new_campaign_dashboard',        label:'new_campaign_dashboard',         type:'table' } },
+      { data:{ id:'table_new_manager_dashboard',         label:'new_manager_dashboard',          type:'table' } },
+      { data:{ id:'table_new_watch',                     label:'new_watch',                      type:'table' } },
+      { data:{ id:'table_participant_daily_metrics',     label:'participant_daily_metrics',      type:'table' } },
+      { data:{ id:'table_participant_details',           label:'participant_details',            type:'table' } },
+      { data:{ id:'table_watch',                         label:'watch',                          type:'table' } },
+      { data:{ id:'table_watch_config',                  label:'watch_config',                   type:'table' } },
+      { data:{ id:'table_new_campaign_dashboard_extra',  label:'new_campaign_dashboard_extra',   type:'table' } },
+
+      // ─── LAMBDA NODES ───────────────────────────────────────
+      { data:{ id:'lambda_new_admin_dashboard',                 label:'new_admin_dashboard',                 type:'lambda' } },
+      { data:{ id:'lambda_new_battery_decay_calculator',        label:'new_battery_decay_calculator',        type:'lambda' } },
+      { data:{ id:'lambda_new_campaign_dashboard',              label:'new_campaign_dashboard',              type:'lambda' } },
+      { data:{ id:'lambda_new_config_watch',                    label:'new_config_watch',                    type:'lambda' } },
+      { data:{ id:'lambda_new_coordinator_permission',          label:'new_coordinator_permission',          type:'lambda' } },
+      { data:{ id:'lambda_new_cognitive_data',                  label:'new_cognitive_data',                  type:'lambda' } },
+      { data:{ id:'lambda_new_create_campaign',                 label:'new_create_campaign',                 type:'lambda' } },
+      { data:{ id:'lambda_new_create_coordinator',              label:'new_create_coordinator',              type:'lambda' } },
+      { data:{ id:'lambda_new_create_manager',                  label:'new_create_manager',                  type:'lambda' } },
+      { data:{ id:'lambda_new_create_participant',              label:'new_create_participant',              type:'lambda' } },
+      { data:{ id:'lambda_new_delete_participant',              label:'new_delete_participant',              type:'lambda' } },
+      { data:{ id:'lambda_new_downloadGlue_test',               label:'new_downloadGlue_test',               type:'lambda' } },
+      { data:{ id:'lambda_new_download_report',                 label:'new_download_report',                 type:'lambda' } },
+      { data:{ id:'lambda_new_get_campaignList',                label:'new_get_campaignList',                type:'lambda' } },
+      { data:{ id:'lambda_new_get_coordinator_permissions',     label:'new_get_coordinator_permissions',     type:'lambda' } },
+      { data:{ id:'lambda_new_get_csv_files',                   label:'new_get_csv_files',                   type:'lambda' } },
+      { data:{ id:'lambda_new_get_participantList',             label:'new_get_participantList',             type:'lambda' } },
+      { data:{ id:'lambda_new_get_participant_metrics_in_analytics_page',
+                                                                 label:'new_get_participant_metrics_in_analytics_page', type:'lambda' } },
+      { data:{ id:'lambda_new_get_watch_config',                label:'new_get_watch_config',                type:'lambda' } },
+      { data:{ id:'lambda_new_manager_dashboard',               label:'new_manager_dashboard',               type:'lambda' } },
+      { data:{ id:'lambda_new_numeric_data_with_time',          label:'new_numeric_data_with_time',          type:'lambda' } },
+      { data:{ id:'lambda_new_participant_dashboard',           label:'new_participant_dashboard',           type:'lambda' } },
+      { data:{ id:'lambda_new_total_prompt_calculator',         label:'new_total_prompt_calculator',         type:'lambda' } },
+      { data:{ id:'lambda_new_unique_questions_for_new_format', label:'new_unique_questions_for_new_format', type:'lambda' } },
+      { data:{ id:'lambda_new_watchdatapush',                   label:'new_watchdatapush',                   type:'lambda' } },
+      { data:{ id:'lambda_b_test_prompt_calculator',            label:'b_test_prompt_calculator',            type:'lambda' } },
+      { data:{ id:'lambda_new_daily_prompt_calculator',         label:'new_daily_prompt_calculator',         type:'lambda' } },
+      { data:{ id:'lambda_new_update_watch_config',             label:'new_update_watch_config',             type:'lambda' } },
+      { data:{ id:'lambda_new_get_participant_avg_for_analytics',
+                                                                 label:'new_get_participant_avg_for_analytics', type:'lambda' } },
+      { data:{ id:'lambda_new_create_cognito_user',             label:'new_create_cognito_user',             type:'lambda' } },
+
+      // ─── API NODES ──────────────────────────────────────────
+      { data:{ id:'api_POST_roamm_new_admin_dashboard',               label:'POST /roamm/new_admin_dashboard',               type:'api' } },
+      { data:{ id:'api_POST_roamm_new_campaign_dashboard',            label:'POST /roamm/new_campaign_dashboard',            type:'api' } },
+      { data:{ id:'api_POST_roamm_new_get_csv_files',                 label:'POST /roamm/new_get_csv_files',                 type:'api' } },
+      { data:{ id:'api_POST_roamm_new_getBulkData',                   label:'POST /roamm/new_getBulkData',                   type:'api' } },
+      { data:{ id:'api_POST_roamm_new_delete_participant',            label:'POST /roamm/new_delete_participant',            type:'api' } },
+      { data:{ id:'api_POST_roamm_new_cognitive_data',                label:'POST /roamm/new_cognitive_data',                type:'api' } },
+      { data:{ id:'api_POST_roamm_new_get_campaignlist',              label:'POST /roamm/new_get_campaignlist',              type:'api' } },
+      { data:{ id:'api_POST_roamm_new_config_watch',                  label:'POST /roamm/new_config_watch',                  type:'api' } },
+      { data:{ id:'api_POST_roamm_new_get_participantlist',           label:'POST /roamm/new_get_participantlist',           type:'api' } },
+      { data:{ id:'api_POST_roamm_new_get_coordinator_permissions',   label:'POST /roamm/new_get_coordinator_permissions',   type:'api' } },
+      { data:{ id:'api_POST_roamm_new_coordinator_permission',        label:'POST /roamm/new_coordinator_permission',        type:'api' } },
+      { data:{ id:'api_POST_roamm_new_create_campaign',               label:'POST /roamm/new_create_campaign',               type:'api' } },
+      { data:{ id:'api_POST_roamm_new_create_coordinator',            label:'POST /roamm/new_create_coordinator',            type:'api' } },
+      { data:{ id:'api_POST_roamm_new_create_cognito_user',           label:'POST /roamm/new_create_cognito_user',           type:'api' } },
+      { data:{ id:'api_POST_roamm_new_manager_dashboard',             label:'POST /roamm/new_manager_dashboard',             type:'api' } },
+      { data:{ id:'api_POST_roamm_new_manager_dashboard_new_create_manager',
+                                                                 label:'POST /roamm/new_manager_dashboard/new_create_manager',
+                                                                 type:'api' } },
+      { data:{ id:'api_POST_roamm_new_manager_dashboard_new_create_participant',
+                                                                 label:'POST /roamm/new_manager_dashboard/new_create_participant',
+                                                                 type:'api' } },
+      { data:{ id:'api_POST_roamm_new_get_watch_config',              label:'POST /roamm/new_get_watch_config',              type:'api' } },
+      { data:{ id:'api_POST_roamm_new_update_watch_config',           label:'POST /roamm/new_update_watch_config',           type:'api' } },
+      { data:{ id:'api_POST_roamm_new_participant_dashboard',         label:'POST /roamm/new_participant_dashboard',         type:'api' } },
+      { data:{ id:'api_POST_roamm_new_get_participant_avg_for_analytics',
+                                                                 label:'POST /roamm/new_get_participant_avg_for_analytics',
+                                                                 type:'api' } },
+      { data:{ id:'api_POST_roamm_new_dataanalytics_new_unique_questions',
+                                                                 label:'POST /roamm/new_dataanalytics/new_unique_questions',
+                                                                 type:'api' } },
+      { data:{ id:'api_POST_roamm_new_numeric_data_with_time',        label:'POST /roamm/new_numeric_data_with_time',        type:'api' } },
+      { data:{ id:'api_POST_roamm_new_download_report',               label:'POST /roamm/new_download_report',               type:'api' } },
+      { data:{ id:'api_Device_API_Push',                             label:'Device API Push',                              type:'api' } },
+
+      // ─── EDGES: Lambda → Table ─────────────────────────────────
+      { data:{ id:'e1', source:'lambda_new_admin_dashboard',     target:'table_new_admin_dashboard',
+               operation:'SELECT', columns:['managerid','name','total_campaigns','total_participants','active_participants'] } },
+      { data:{ id:'e2', source:'lambda_new_battery_decay_calculator',
+               target:'table_participant_details',
+               operation:'SELECT', columns:['campaign_id','participant_id','manager_id'] } },
+      { data:{ id:'e3', source:'lambda_new_battery_decay_calculator',
+               target:'table_new_watch',
+               operation:'SELECT', columns:['watchid','questionid','value','collectedtimestamp'] } },
+      { data:{ id:'e4', source:'lambda_new_battery_decay_calculator',
+               target:'table_b_test_participant_daily_metrics',
+               operation:'SELECT', columns:[] } },
+      { data:{ id:'e5', source:'lambda_new_battery_decay_calculator',
+               target:'table_b_test_participant_daily_metrics',
+               operation:'UPDATE', columns:['batter_decay'] } },
+      { data:{ id:'e6', source:'lambda_new_battery_decay_calculator',
+               target:'table_b_test_participant_daily_metrics',
+               operation:'INSERT', columns:[
+                 'participant_id','campaign_id','timestamps','prompts_count','sensor_count',
+                 'batter_decay','manager_id','compliance','new_prompts_count','new_expected_count',
+                 'new_compliance','new_sensor_count','updated_prompts_count'
+               ] } },
+      { data:{ id:'e7', source:'lambda_new_campaign_dashboard',
+               target:'table_new_campaign_dashboard',
+               operation:'SELECT', columns:[] } },
+      { data:{ id:'e8', source:'lambda_new_campaign_dashboard',
+               target:'table_participant_daily_metrics',
+               operation:'SELECT', columns:[] } },
+      { data:{ id:'e9', source:'lambda_new_campaign_dashboard',
+               target:'table_b_test_participant_daily_metrics',
+               operation:'SELECT', columns:[] } },
+      { data:{ id:'e10', source:'lambda_new_config_watch',
+                target:'table_watch_config',
+                operation:'SELECT', columns:['participant_id','endtime'] } },
+      { data:{ id:'e11', source:'lambda_new_config_watch',
+                target:'table_watch_config',
+                operation:'INSERT', columns:['watchid','campaign_id','participant_id','starttime','endtime'] } },
+      { data:{ id:'e12', source:'lambda_new_config_watch',
+                target:'table_new_campaign_dashboard',
+                operation:'INSERT', columns:[] } },
+      { data:{ id:'e13', source:'lambda_new_config_watch',
+                target:'table_new_manager_dashboard',
+                operation:'UPDATE', columns:['total_participants','active_participants'] } },
+      { data:{ id:'e14', source:'lambda_new_config_watch',
+                target:'table_new_admin_dashboard',
+                operation:'UPDATE', columns:['total_participants','active_participants'] } },
+      { data:{ id:'e15', source:'lambda_new_coordinator_permission',
+                target:'table_coordinator_permissions',
+                operation:'SELECT', columns:[] } },
+      { data:{ id:'e16', source:'lambda_new_coordinator_permission',
+                target:'table_coordinator_permissions',
+                operation:'INSERT', columns:['coordinatorid','managerid','campaignid'] } },
+      { data:{ id:'e17', source:'lambda_new_cognitive_data',
+                target:'table_new_watch',
+                operation:'SELECT', columns:['questionid','value','collectedtimestamp'] } },
+      { data:{ id:'e18', source:'lambda_new_create_campaign',
+                target:'table_new_manager_dashboard',
+                operation:'INSERT', columns:[] } },
+      { data:{ id:'e19', source:'lambda_new_create_campaign',
+                target:'table_new_admin_dashboard',
+                operation:'INSERT', columns:[] } },
+      { data:{ id:'e20', source:'lambda_new_create_coordinator',
+                target:'table_coordinator_details',
+                operation:'INSERT', columns:['coordinatorid','name','email','department'] } },
+      { data:{ id:'e21', source:'lambda_new_create_manager',
+                target:'table_campaignmanager_info',
+                operation:'INSERT', columns:['manager_id','name','email','department'] } },
+      { data:{ id:'e22', source:'lambda_new_create_manager',
+                target:'table_new_admin_dashboard',
+                operation:'INSERT', columns:[] } },
+      { data:{ id:'e23', source:'lambda_new_create_participant',
+                target:'table_participant_details',
+                operation:'INSERT', columns:['participant_id','campaign_id','manager_id','email','age','gender','race','ethnicity'] } },
+      { data:{ id:'e24', source:'lambda_new_delete_participant',
+                target:'table_participant_details',
+                operation:'DELETE', columns:[] } },
+      { data:{ id:'e25', source:'lambda_new_delete_participant',
+                target:'table_watch_config',
+                operation:'DELETE', columns:[] } },
+      { data:{ id:'e26', source:'lambda_new_delete_participant',
+                target:'table_new_campaign_dashboard',
+                operation:'DELETE', columns:[] } },
+      { data:{ id:'e27', source:'lambda_new_delete_participant',
+                target:'table_new_manager_dashboard',
+                operation:'UPDATE', columns:['active_participants','total_participants'] } },
+      { data:{ id:'e28', source:'lambda_new_delete_participant',
+                target:'table_new_admin_dashboard',
+                operation:'UPDATE', columns:['active_participants','total_participants'] } },
+      { data:{ id:'e29', source:'lambda_new_get_campaignList',
+                target:'table_participant_details',
+                operation:'SELECT', columns:['campaign_id'] } },
+      { data:{ id:'e30', source:'lambda_new_get_coordinator_permissions',
+                target:'table_coordinator_permissions',
+                operation:'SELECT', columns:['coordinatorid','managerid','campaignid'] } },
+      { data:{ id:'e31', source:'lambda_new_get_coordinator_permissions',
+                target:'table_new_manager_dashboard',
+                operation:'SELECT', columns:['active_participants','total_participants'] } },
+      { data:{ id:'e32', source:'lambda_new_get_participantList',
+                target:'table_participant_details',
+                operation:'SELECT', columns:['participant_id','email','age','gender','race','ethnicity'] } },
+      { data:{ id:'e33', source:'lambda_new_get_participant_metrics_in_analytics_page',
+                target:'table_b_test_participant_daily_metrics',
+                operation:'SELECT', columns:[] } },
+      { data:{ id:'e34', source:'lambda_new_get_watch_config',
+                target:'table_watch_config',
+                operation:'SELECT', columns:[] } },
+      { data:{ id:'e35', source:'lambda_new_manager_dashboard',
+                target:'table_new_manager_dashboard',
+                operation:'SELECT', columns:[] } },
+      { data:{ id:'e36', source:'lambda_new_numeric_data_with_time',
+                target:'table_new_watch',
+                operation:'SELECT', columns:['value','collectedtimestamp'] } },
+      { data:{ id:'e37', source:'lambda_new_participant_dashboard',
+                target:'table_participant_details',
+                operation:'SELECT', columns:[] } },
+      { data:{ id:'e38', source:'lambda_new_participant_dashboard',
+                target:'table_watch_config',
+                operation:'SELECT', columns:['starttime','endtime'] } },
+      { data:{ id:'e39', source:'lambda_new_total_prompt_calculator',
+                target:'table_new_campaign_dashboard_extra',
+                operation:'SELECT', columns:['campaignid','participantid','managerid','startdate','endtime','total_compliance'] } },
+      { data:{ id:'e40', source:'lambda_new_total_prompt_calculator',
+                target:'table_b_test_participant_daily_metrics',
+                operation:'SELECT', columns:['new_prompts_count','new_expected_count'] } },
+      { data:{ id:'e41', source:'lambda_new_total_prompt_calculator',
+                target:'table_new_campaign_dashboard_extra',
+                operation:'UPDATE', columns:[] } },
+      { data:{ id:'e42', source:'lambda_new_watchdatapush',
+                target:'table_watch_config',
+                operation:'SELECT', columns:['campaign_id','participant_id'] } },
+      { data:{ id:'e43', source:'lambda_new_watchdatapush',
+                target:'table_new_watch',
+                operation:'INSERT', columns:['watchid','questionid','value','collectedtimestamp','exportedtimestamp','campaign_id','participant_id'] } },
+      { data:{ id:'e44', source:'lambda_new_watchdatapush',
+                target:'table_new_campaign_dashboard',
+                operation:'UPDATE', columns:['lastdata'] } },
+      { data:{ id:'e45', source:'lambda_b_test_prompt_calculator',
+                target:'table_new_campaign_dashboard',
+                operation:'SELECT', columns:['campaignid','participantid','managerid'] } },
+      { data:{ id:'e46', source:'lambda_b_test_prompt_calculator',
+                target:'table_new_watch',
+                operation:'SELECT', columns:[] } },
+      { data:{ id:'e47', source:'lambda_b_test_prompt_calculator',
+                target:'table_b_test_participant_daily_metrics',
+                operation:'SELECT', columns:[] } },
+      { data:{ id:'e48', source:'lambda_b_test_prompt_calculator',
+                target:'table_b_test_participant_daily_metrics',
+                operation:'UPDATE', columns:['prompts_count','sensor_count'] } },
+      { data:{ id:'e49', source:'lambda_b_test_prompt_calculator',
+                target:'table_b_test_participant_daily_metrics',
+                operation:'INSERT', columns:[] } },
+      { data:{ id:'e50', source:'lambda_new_daily_prompt_calculator',
+                target:'table_participant_details',
+                operation:'SELECT', columns:['campaign_id','participant_id','manager_id'] } },
+      { data:{ id:'e51', source:'lambda_new_daily_prompt_calculator',
+                target:'table_new_watch',
+                operation:'SELECT', columns:[] } },
+      { data:{ id:'e52', source:'lambda_new_daily_prompt_calculator',
+                target:'table_b_test_participant_daily_metrics',
+                operation:'UPDATE', columns:[] } },
+      { data:{ id:'e53', source:'lambda_new_daily_prompt_calculator',
+                target:'table_b_test_participant_daily_metrics',
+                operation:'INSERT', columns:[] } },
+
+      // ─── EDGES: API → Lambda ──────────────────────────────────
+      { data:{ id:'e101', source:'api_POST_roamm_new_admin_dashboard',         target:'lambda_new_admin_dashboard',               payloadSchema:{} } },
+      { data:{ id:'e102', source:'api_POST_roamm_new_campaign_dashboard',      target:'lambda_new_campaign_dashboard',            payloadSchema:{ managerid:'<string>', campaign_id:'<string>' } } },
+      { data:{ id:'e103', source:'api_POST_roamm_new_get_csv_files',           target:'lambda_new_get_csv_files',                 payloadSchema:{ campaign_id:'<string>', email:'<string>', participant_id:'<string>', selection:'<string>' } } },
+      { data:{ id:'e104', source:'api_POST_roamm_new_getBulkData',             target:'lambda_new_downloadGlue_test',             payloadSchema:{ campaign_id:'<string>', participant_id_list:['<string>'], email:'<string>' } } },
+      { data:{ id:'e105', source:'api_POST_roamm_new_delete_participant',      target:'lambda_new_delete_participant',            payloadSchema:{ manager_id:'<string>', campaign_id:'<string>', participant_id:'<string>', watchid:'<string>', starttime:'<ISO-datetime>' } } },
+      { data:{ id:'e106', source:'api_POST_roamm_new_cognitive_data',          target:'lambda_new_cognitive_data',                payloadSchema:{ campaign_id:'<string>', participant_id:'<string>' } } },
+      { data:{ id:'e107', source:'api_POST_roamm_new_get_campaignlist',        target:'lambda_new_get_campaignList',              payloadSchema:{ manager_id:'<string>' } } },
+      { data:{ id:'e108', source:'api_POST_roamm_new_config_watch',            target:'lambda_new_config_watch',                  payloadSchema:{ campaign_id:'<string>', participant_id:'<string>', watchid:'<string>', starttime:'<ISO-datetime>', endtime:'<ISO-datetime>', manager_id:'<string>' } } },
+      { data:{ id:'e109', source:'api_POST_roamm_new_get_participantlist',     target:'lambda_new_get_participantList',           payloadSchema:{ manager_id:'<string>', campaign_id:'<string>' } } },
+      { data:{ id:'e110', source:'api_POST_roamm_new_get_coordinator_permissions',
+                                                                         target:'lambda_new_get_coordinator_permissions',   payloadSchema:{ coordinatorid:'<string>' } } },
+      { data:{ id:'e111', source:'api_POST_roamm_new_coordinator_permission',  target:'lambda_new_coordinator_permission',        payloadSchema:{ coordinatorid:'<string>', campaignid:'<string>', managerid:'<string>' } } },
+      { data:{ id:'e112', source:'api_POST_roamm_new_create_campaign',         target:'lambda_new_create_campaign',               payloadSchema:{ managerid:'<string>', campaign_data:{ campaignid:'<string>', CognitivePrompt:['<string>'], DiscretePrompt:['<string>'], NumericPrompt:['<string>'] } } } },
+      { data:{ id:'e113', source:'api_POST_roamm_new_create_coordinator',      target:'lambda_new_create_coordinator',            payloadSchema:{ coordinatorid:'<string>', name:'<string>', department:'<string>', email:'<string>' } } },
+      { data:{ id:'e114', source:'api_POST_roamm_new_create_cognito_user',     target:'lambda_new_create_cognito_user',           payloadSchema:{ role:'coordinator' } } },
+      { data:{ id:'e115', source:'api_POST_roamm_new_manager_dashboard',       target:'lambda_new_manager_dashboard',             payloadSchema:{ manager_id:'<string>' } } },
+      { data:{ id:'e116', source:'api_POST_roamm_new_manager_dashboard_new_create_manager',
+                                                                         target:'lambda_new_create_manager',                payloadSchema:{ manager_id:'<string>', name:'<string>', department:'<string>', email:'<string>' } } },
+      { data:{ id:'e117', source:'api_POST_roamm_new_manager_dashboard_new_create_participant',
+                                                                         target:'lambda_new_create_participant',            payloadSchema:{ manager_id:'<string>', campaign_id:'<string>', participant_id:'<string>', age:0, gender:'<string>', race:'<string>', ethnicity:'<string>', email:'<string>' } } },
+      { data:{ id:'e118', source:'api_POST_roamm_new_get_watch_config',        target:'lambda_new_get_watch_config',              payloadSchema:{ campaign_id:'<string>', participant_id:'<string>' } } },
+      { data:{ id:'e119', source:'api_POST_roamm_new_update_watch_config',     target:'lambda_new_update_watch_config',           payloadSchema:{ campaign_id:'<string>', participant_id:'<string>', watchid:'<string>', updated_watchid:'<string>', starttime:'<ISO-datetime>', endtime:'<ISO-datetime>', manager_id:'<string>' } } },
+      { data:{ id:'e120', source:'api_POST_roamm_new_participant_dashboard',   target:'lambda_new_participant_dashboard',         payloadSchema:{ manager_id:'<string>', campaign_id:'<string>', participant_id:'<string>' } } },
+      { data:{ id:'e121', source:'api_POST_roamm_new_get_participant_avg_for_analytics',
+                                                                         target:'lambda_new_get_participant_avg_for_analytics',
+                                                                         payloadSchema:{ campaign_id:'<string>', participant_id:'<string>', start_date:'<YYYY-MM-DD>', end_date:'<YYYY-MM-DD>' } } },
+      { data:{ id:'e122', source:'api_POST_roamm_new_dataanalytics_new_unique_questions',
+                                                                         target:'lambda_new_unique_questions_for_new_format',
+                                                                         payloadSchema:{ campaignid:'<string>' } } },
+      { data:{ id:'e123', source:'api_POST_roamm_new_numeric_data_with_time',  target:'lambda_new_numeric_data_with_time',
+                                                                         payloadSchema:{ campaign_id:'<string>', questionid:0, participant_id:'<string>', start_date:'<YYYY-MM-DD>', end_date:'<YYYY-MM-DD>' } } },
+      { data:{ id:'e124', source:'api_POST_roamm_new_download_report',         target:'lambda_new_download_report',
+                                                                         payloadSchema:{ dateRange:{ start:'<YYYY-MM-DD>', end:'<YYYY-MM-DD>' }, participantId:'<string>', campaignId:'<string>', managerId:'<string>' } } },
+      { data:{ id:'e125', source:'api_Device_API_Push',                       target:'lambda_new_watchdatapush',
+                                                                         payloadSchema:[{ watchId:'<string>', question:0, value:'<string>', timestamp:'<ISO-datetime>' }] } }
+    ];
+
+    // Debug log
+    console.log('Loading elements:', userElements.length, userElements);
+
+    // Containers
+    /*const containers = [
+      { data:{ id:'cluster_APIs',    label:'APIs',    type:'container' } },
+      { data:{ id:'cluster_Lambdas', label:'Lambdas', type:'container' } },
+      { data:{ id:'cluster_Tables',  label:'Tables',  type:'container' } }
+    ];
+    userElements.forEach(el=>{
+      if(el.data && el.data.type){
+        if(el.data.type==='api')    el.data.parent='cluster_APIs';
+        if(el.data.type==='lambda') el.data.parent='cluster_Lambdas';
+        if(el.data.type==='table')  el.data.parent='cluster_Tables';
+      }
+    });
+
+    const elements = containers.concat(userElements);*/
+
+    const elements = userElements;
+
+    // Cytoscape init
+    const cy = cytoscape({
+      container: document.getElementById('cy'),
+      elements,
+      style: [
+        //{ selector:'node[type="container"]', style:{ shape:'roundrectangle','background-opacity':0,'border-color':'#888','border-width':2,'label':'data(label)','font-size':12,'z-index': 0 } },
+        { selector:'node[type="api"]',       style:{ shape:'diamond','background-color':'#FFCDD2','label':'data(label)','font-size':20 } },
+        { selector:'node[type="lambda"]',    style:{ shape:'ellipse','background-color':'#C8E6C9','label':'data(label)','font-size':20 } },
+        { selector:'node[type="table"]',     style:{ shape:'roundrectangle','background-color':'#BBDEFB','label':'data(label)','font-size':20 } },
+        //{selector: 'node[type="api"], node[type="lambda"], node[type="table"]',style: {'z-index': 1 }},
+        { selector:'edge',                   style:{ 'curveStyle':'bezier','target-arrow-shape':'triangle','label':'data(operation)','font-size':10,'text-rotation':'autorotate' } },
+        { selector:'.highlighted',           style:{ 'opacity':1,'z-index':9999 } },
+        { selector:'.faded',                 style:{ 'opacity':0.1 } },
+        { selector:'.hidden',                style:{ 'display':'none' } }
+      ],
+      layout:{ name:'dagre', rankDir:'LR', nodeSep:55, edgeSep:13, rankSep:500 }
+    });
+
+    const infoPane = document.getElementById('info');
+    function reset(){
+      cy.elements().removeClass('highlighted faded');
+      infoPane.innerHTML = userElements.length
+        ? '<em>Click a node or edge…</em>'
+        : '<em style="color:red">No elements loaded. Check console.</em>';
+    }
+    cy.on('tap', evt=>{ if(evt.target===cy) reset(); });
+
+    
+
+    // Highlight logic
+    cy.on('tap','node,edge',evt=>{
+      reset();
+      const el = evt.target;
+      let sub;
+      if(el.isEdge()){
+        sub = el.union(el.source()).union(el.target());
+      } else {
+        sub = el.closedNeighborhood();
+      }
+      sub.addClass('highlighted');
+      cy.elements().difference(sub).addClass('faded');
+
+      // Info pane
+      const d = el.data();
+      let html = `<h3>${d.label||d.id}</h3><pre>${JSON.stringify(d,null,2)}</pre>`;
+      if(el.isNode()){
+        html += '<h4>Connections</h4><ul>';
+        el.connectedEdges().forEach(ed=>{
+          const dd = ed.data();
+          const hint = dd.operation?dd.operation:(dd.payloadSchema?'payload':'');
+          html += `<li>${ed.source().data('label')} → ${ed.target().data('label')} <span class="edge-hint">${hint}</span></li>`;
+        });
+        html += '</ul>';
+      }
+      infoPane.innerHTML = html;
+    });
+
+    // Tooltips
+    cy.edges().forEach(edge=>{
+      const d = edge.data();
+      if(d.operation||d.payloadSchema){
+        const ref = edge.popperRef();
+        const tip = document.createElement('div');
+        document.body.appendChild(tip);
+        tippy(tip,{
+          getReferenceClientRect:()=>ref.getBoundingClientRect(),
+          content:()=>{
+            let c='';
+            if(d.operation)    c+=`<strong>Op:</strong> ${d.operation}<br>`;
+            if(d.columns)      c+=`<strong>Cols:</strong> ${d.columns.join(', ')}<br>`;
+            if(d.payloadSchema)c+=`<strong>Payload:</strong><br><code>${JSON.stringify(d.payloadSchema)}</code>`;
+            return c;
+          },
+          trigger:'mouseenter',interactive:true,placement:'bottom'
+        });
+      }
+    });
+
+    // Layout buttons
+    document.getElementById('layoutDagre').onclick= ()=>cy.layout({name:'dagre',rankDir:'LR',nodeSep:50,edgeSep:10,rankSep:100}).run();
+    document.getElementById('layoutBreadth').onclick= ()=>cy.layout({name:'breadthfirst',directed:true,padding:50}).run();
+    document.getElementById('layoutCose').onclick= ()=>cy.layout({name:'cose',animate:true,fit:true}).run();
+    document.getElementById('layoutCoseBilkent').onclick= ()=>cy.layout({name:'cose-bilkent',animate:true,fit:true}).run();
+    document.getElementById('layoutConcentric').onclick= ()=>cy.layout({name:'concentric',concentric:n=>({api:3,lambda:2,table:1,container:0}[n.data('type')]),padding:100}).run();
+    document.getElementById('layoutPreset').onclick= ()=>cy.layout({name:'preset',fit:true}).run();
+
+    // Search
+    document.getElementById('search').addEventListener('keydown',e=>{
+      if(e.key==='Enter'){
+        const q=e.target.value.toLowerCase().trim();
+        const nodes=cy.nodes().filter(n=>n.data('label').toLowerCase().includes(q)||n.id().toLowerCase().includes(q));
+        if(nodes.length){
+          reset();
+          nodes.addClass('highlighted');
+          cy.elements().difference(nodes).addClass('faded');
+          cy.fit(nodes,50);
+        }
+      }
+    });
+
+    // Filters
+    document.querySelectorAll('.filter-group input').forEach(chk=>chk.onchange=e=>{
+      const t=e.target.dataset.type;
+      cy.nodes(`[type="${t}"]`).toggleClass('hidden',!e.target.checked);
+    });
+
+    // Networks
+    document.querySelectorAll('#networkIndex a').forEach(a=>a.onclick=e=>{
+      e.preventDefault();
+      const net=e.target.dataset.network;
+      const nodes=cy.nodes(`[network="${net}"]`);
+      if(nodes.length){
+        reset();
+        const sub=nodes.closedNeighborhood();
+        sub.addClass('highlighted');
+        cy.elements().difference(sub).addClass('faded');
+        cy.fit(sub,50);
+      }
+    });
+    
+
+  </script>
+</body>
+</html>
